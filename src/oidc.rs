@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use chrono::{Duration, Utc};
 use cookie::{Cookie, SameSite};
-use ethers_core::{types::H160, utils::to_checksum};
+use ethers_core::{types::H160, types::Signature, utils::to_checksum};
 use ethers_providers::{Http, Middleware, Provider};
 use headers::{self, authorization::Bearer};
 use hex::FromHex;
@@ -29,7 +29,7 @@ use rsa::{
     RsaPrivateKey,
 };
 use serde::{Deserialize, Serialize};
-use siwe::{Message, TimeStamp, VerificationOpts, Version};
+use siwe::{Message, TimeStamp, VerificationError, VerificationOpts, Version};
 use std::{str::FromStr, time};
 use thiserror::Error;
 use tracing::{error, info};
@@ -586,20 +586,6 @@ pub async fn sign_in(
         }
     };
 
-    let signature = match <[u8; 65]>::from_hex(
-        siwe_cookie
-            .signature
-            .chars()
-            .skip(2)
-            .take(130)
-            .collect::<String>(),
-    ) {
-        Ok(s) => s,
-        Err(e) => {
-            return Err(CustomError::BadRequest(format!("Bad signature: {}", e)));
-        }
-    };
-
     let message = siwe_cookie
         .message
         .to_eip4361_message()
@@ -617,17 +603,30 @@ pub async fn sign_in(
     } else {
         None
     };
-    message
-        .verify(
-            &signature,
-            &VerificationOpts {
-                domain,
-                nonce: Some(session_entry.siwe_nonce.clone()),
-                timestamp: None,
-            },
-        )
-        .await
-        .map_err(|e| anyhow!("Failed message verification: {}", e))?;
+
+    let opts = &VerificationOpts {
+        domain,
+        nonce: Some(session_entry.siwe_nonce.clone()),
+        timestamp: None,
+    };
+    match (
+        opts.timestamp
+            .as_ref()
+            .map(|t| message.valid_at(t))
+            .unwrap_or_else(|| message.valid_now()),
+        opts.domain.as_ref(),
+        opts.nonce.as_ref(),
+    ) {
+        (false, _, _) => return Err(anyhow!(VerificationError::Time).into()),
+        (_, Some(d), _) if *d != message.domain => return Err(anyhow!(VerificationError::DomainMismatch).into()),
+        (_, _, Some(n)) if *n != message.nonce => return Err(anyhow!(VerificationError::NonceMismatch).into()),
+        _ => (),
+    };
+
+    let sig = Signature::from_str(&siwe_cookie.signature)
+        .map_err(|e| anyhow!("Failed to decode signature: {}", e))?;
+    sig.verify(message.to_string(), siwe_cookie.message.address)
+        .map_err(|e| anyhow!("Failed to verify signature: {}", e))?;
 
     let domain = params.redirect_uri.url();
     if let Some(r) = siwe_cookie.message.resources.get(0) {
