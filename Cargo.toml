@@ -51,7 +51,7 @@ getrandom = { version = "0.2", features = ["js"] }
 matchit = "0.4.2"
 uuid = { version = "0.8", features = ["serde", "v4", "wasm-bindgen"] }
 wee_alloc = { version = "0.4" }
-worker = "0.0.12"
+worker = "0.0.16"
 time = { version = "0.3.17", features = ["wasm-bindgen"] }
 
 [profile.release]
