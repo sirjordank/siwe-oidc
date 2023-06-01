@@ -4,7 +4,6 @@ use cookie::{Cookie, SameSite};
 use ethers_core::{types::H160, types::Signature, utils::to_checksum};
 use ethers_providers::{Http, Middleware, Provider};
 use headers::{self, authorization::Bearer};
-use hex::FromHex;
 use iri_string::types::UriString;
 use openidconnect::{
     core::{

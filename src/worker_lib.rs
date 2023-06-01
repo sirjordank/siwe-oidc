@@ -1,7 +1,7 @@
 use anyhow::anyhow;
 use headers::{
     self,
-    authorization::{Basic, Bearer, Credentials},
+    authorization::{Bearer, Credentials},
     Authorization, ContentType, Header, HeaderValue,
 };
 use rsa::{pkcs1::DecodeRsaPrivateKey, RsaPrivateKey};
