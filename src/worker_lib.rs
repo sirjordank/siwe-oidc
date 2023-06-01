@@ -138,43 +138,7 @@ pub async fn main(req: Request, env: Env) -> Result<Response> {
             Response::empty()?.with_cors(&get_cors())
         })
         .post_async(oidc::TOKEN_PATH, |mut req, ctx| async move {
-            let form_data = req.form_data().await?;
-            let code = if let Some(FormEntry::Field(c)) = form_data.get("code") {
-                c
-            } else {
-                return Response::error("Missing code", 400);
-            };
-            let client_id = match form_data.get("client_id") {
-                Some(FormEntry::Field(c)) => Some(c),
-                None => None,
-                _ => return Response::error("Client ID not a field", 400),
-            };
-            let client_secret = match form_data.get("client_secret") {
-                Some(FormEntry::Field(c)) => Some(c),
-                None => None,
-                _ => return Response::error("Client secret not a field", 400),
-            };
-            let grant_type = if let Some(FormEntry::Field(c)) = form_data.get("code") {
-                if let Ok(cc) = serde_json::from_str(&format!("\"{}\"", c)) {
-                    cc
-                } else {
-                    return Response::error("Invalid grant type", 400);
-                }
-            } else {
-                return Response::error("Missing grant type", 400);
-            };
-            let secret = req
-                .headers()
-                .get(Authorization::<Bearer>::name().as_str())?
-                .and_then(|b| HeaderValue::from_str(b.as_ref()).ok())
-                .as_ref()
-                .and_then(|b| {
-                    if b.to_str().unwrap().starts_with("Bearer") {
-                        Bearer::decode(b).map(|bb| bb.token().to_string())
-                    } else {
-                        Basic::decode(b).map(|bb| bb.password().to_string())
-                    }
-                });
+            let payload: TokenForm = json_bad_request!(req.json().await)?;
             let private_key = RsaPrivateKey::from_pkcs1_pem(&ctx.secret(RSA_PEM_KEY)?.to_string())
                 .map_err(|e| anyhow!("Failed to load private key: {}", e))
                 .unwrap();
@@ -186,16 +150,9 @@ pub async fn main(req: Request, env: Env) -> Result<Response> {
                 .ok();
             let db_client = CFClient { ctx, url };
             let token_response = oidc::token(
-                TokenForm {
-                    code,
-                    client_id,
-                    client_secret,
-                    grant_type,
-                },
-                secret,
+                payload,
                 private_key,
                 base_url,
-                false,
                 eth_provider,
                 &db_client,
             )

@@ -250,18 +250,16 @@ async fn resolve_claims(
 #[derive(Serialize, Deserialize)]
 pub struct TokenForm {
     pub code: String,
-    pub client_id: Option<String>,
-    pub client_secret: Option<String>,
+    pub client_id: String,
+    pub client_secret: String,
     pub grant_type: CoreGrantType, // TODO should just be authorization_code apparently?
 }
 
 pub async fn token(
     form: TokenForm,
     // From the request's Authorization header
-    secret: Option<String>,
     private_key: RsaPrivateKey,
     base_url: Url,
-    require_secret: bool,
     eth_provider: Option<Url>,
     db_client: &DBClientType,
 ) -> Result<CoreTokenResponse, CustomError> {
@@ -274,28 +272,14 @@ pub async fn token(
         }));
     };
 
-    let client_id = if let Some(c) = form.client_id.clone() {
-        c
-    } else {
-        code_entry.client_id.clone()
-    };
-
-    if let Some(secret) = if let Some(b) = secret {
-        Some(b)
-    } else {
-        form.client_secret.clone()
-    } {
-        let client_entry = db_client.get_client(client_id.clone()).await?;
-        if client_entry.is_none() {
-            return Err(CustomError::Unauthorized(
-                "Unrecognised client id.".to_string(),
-            ));
-        }
-        if secret != client_entry.unwrap().secret {
-            return Err(CustomError::Unauthorized("Bad secret.".to_string()));
-        }
-    } else if require_secret {
-        return Err(CustomError::Unauthorized("Secret required.".to_string()));
+    let client_entry = db_client.get_client(form.client_id.clone()).await?;
+    if client_entry.is_none() {
+        return Err(CustomError::Unauthorized(
+            "Unrecognised client id.".to_string(),
+        ));
+    }
+    if form.client_secret != client_entry.unwrap().secret {
+        return Err(CustomError::Unauthorized("Bad secret.".to_string()));
     }
 
     if code_entry.exchange_count > 0 {
@@ -313,7 +297,7 @@ pub async fn token(
     let access_token = AccessToken::new(form.code);
     let core_id_token = CoreIdTokenClaims::new(
         IssuerUrl::from_url(base_url),
-        vec![Audience::new(client_id.clone())],
+        vec![Audience::new(form.client_id.clone())],
         Utc::now() + Duration::seconds(60),
         Utc::now(),
         resolve_claims(
