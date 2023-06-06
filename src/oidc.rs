@@ -608,7 +608,7 @@ pub async fn sign_in(
 
     let sig = Signature::from_str(&siwe_cookie.signature)
         .map_err(|e| anyhow!("Failed to decode signature: {}", e))?;
-    sig.verify(message.to_string(), siwe_cookie.message.address)
+    sig.verify(message.to_string(), params.state.parse::<H160>().unwrap())
         .map_err(|e| anyhow!("Failed to verify signature: {}", e))?;
 
     let domain = params.redirect_uri.url();
@@ -819,6 +819,7 @@ mod tests {
     use super::*;
     use ethers_signers::{LocalWallet, Signer};
     use headers::{HeaderMap, HeaderMapExt, HeaderValue};
+    use hex::FromHex;
     use rand::rngs::OsRng;
     use test_log::test;
 
